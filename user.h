@@ -9,29 +9,61 @@ using namespace std;
 
 class User{
 public:
+    /* basic */
     int id;
     string name;
-    int sock;
+    int ssock;
     struct sockaddr_in skInfo;
     map<string, string> env;
     User();
     string getInfo(int);
+    string getLoginMsg();
+    string getNameMsg();
+
+    /* shell variable */
+    vector<int> outLinePfd;
+    vector<int> successor;
+    map<int, vector<int>> mapSuccessor;
+    int iLine;
+    bool lsFlag;
+    bool pureFlag;
+    bool sharePipeFlag;
+    bool pipeErrFlag;
 };
 
 User::User(){
+    /* basic */
     this->id = -1;
     this->name = "(no name)";
     this->env["PATH"] = "bin:.";
+
+    /* shell variable */
+    iLine = -1;
+    lsFlag = false;
+    pureFlag = false;
+    sharePipeFlag = false;
+    pipeErrFlag = false;
 }
-string User::getInfo(int curUser){
+string User::getInfo(int curUserId){ // for "who" cmd
     char info[1024];
-    sprintf(info, "%d\t%s\t%s:%d", id, name, inet_ntoa(skInfo.sin_addr), skInfo.sin_port);
+    sprintf(info, "%d\t%s\t%s:%d", id, name.c_str(), inet_ntoa(skInfo.sin_addr), skInfo.sin_port);
     string strInfo(info);
-    if (curUser == id){
+    if (curUserId == id){
         strInfo.append("\t<-me");
     }
     return strInfo;
 }
+string User::getLoginMsg(){
+    char msg[1024];
+    sprintf(msg, "*** User ’%s’ entered from %s:%d. ***\n", name.c_str(), inet_ntoa(skInfo.sin_addr), skInfo.sin_port);
+    return string(msg);
+}
+string User::getNameMsg(){
+    char msg[1024];
+    sprintf(msg, "*** User from %s:%d is named ’%s’. ***\n", inet_ntoa(skInfo.sin_addr), skInfo.sin_port, name.c_str());
+    return string(msg);
+}
+
 /*
 // get min unused id
 vector<bool> uidMap; // get min unused id

@@ -29,29 +29,33 @@ using namespace std;
 char** vecStrToChar(vector<string>);
 bool hasPipe(vector<string>);
 vector<vector<string>> splitPipe(vector<string>);
-void purePipe(vector<string>);
+void purePipe(vector<string>, User*);
 int strToInt(string);
 void childHandler(int);
-int npshell();
+int npshellSingle(int);
 int passiveTCP(int, int);
 User* getValidUser(); // return user with min available id
 void resetUser(int);
+bool nameExist(User*, string);
+void listUser(User*);
+void sendMsgTo(User*, string);
+void broadcast(string);
 
 /* global vars */
-int redirectFd;
-// vector<string> lineHistory;
+/*
 vector<int> outLinePfd;
 vector<int> successor;
 int iLine = -1;
-vector<pid_t> childPids;
+// vector<pid_t> childPids;
 bool lsFlag;
 bool pureFlag;
 map<int, vector<int>> mapSuccessor;
 map<int, vector<int>>::iterator mit;
 bool sharePipeFlag;
 bool pipeErrFlag;
-char outBuf[1024];
-vector<User*> users(MAX_USER, new User());
+// char outBuf[1024];
+*/
+vector<User*> users;
 map<int, User*> ssockToUser;
 
 
@@ -63,6 +67,14 @@ int main(int argc, char* const argv[]) {
   fd_set rfds;
   fd_set afds;
   int nfds;
+  string welcome = "****************************************\n";
+  welcome.append("** Welcome to the information server. **\n");
+  welcome.append("****************************************\n");
+  string prompt = "% ";
+  /* init users */
+  for (int i = 0; i < MAX_USER; i++){
+    users.push_back(new User());
+  }
 	/*
   switch (argc) {
     case	2:
@@ -73,10 +85,10 @@ int main(int argc, char* const argv[]) {
       return -1;
 	}
   */
-  service = "7001";
+  service = "7002";
 
   msock = passiveTCP(atoi(service), QUE_LEN);
-  nfds = getdtablesize();
+  nfds = __FD_SETSIZE; //getdtablesize();
   FD_ZERO(&afds);
   FD_SET(msock, &afds);
   while (1) {
@@ -93,34 +105,52 @@ int main(int argc, char* const argv[]) {
         return -1;
       }
       FD_SET(ssock, &afds); // user accpet
+      /* add new user */
       User* newUser = getValidUser();
-      newUser->sock = ssock;
+      newUser->ssock = ssock;
       ssockToUser[ssock] = newUser;
-      memcpy(&fsin, &(newUser->skInfo), sizeof(fsin));
-
+      memcpy(&(newUser->skInfo), &fsin, sizeof(fsin));
+      cout << "newuser:: " << newUser->getInfo(newUser->id) << endl;
+      /* welcome info */
+      sendMsgTo(newUser, welcome);
+      /* broadcast */
+      broadcast(newUser->getLoginMsg());
+      /* first "% " */
+      sendMsgTo(newUser, prompt);
     }
     for(int fd = 0; fd < nfds; fd++){
       if(fd != msock && FD_ISSET(fd, &rfds)){
-        if (npshellSingle(fd) == 0){
+        /* I/O redirection */
+        int stdinCopy = dup(STDIN_FILENO);
+        int stdoutCopy = dup(STDOUT_FILENO);
+        int stderrCopy = dup(STDERR_FILENO);
+
+        dup2(fd, STDIN_FILENO);
+        dup2(fd, STDOUT_FILENO);
+        dup2(fd, STDERR_FILENO);
+
+        int onlineFlag = npshellSingle(fd);
+        
+        if (onlineFlag == 0){
           // user exit
+          dup2(stdinCopy, STDIN_FILENO);
+          dup2(stdoutCopy, STDOUT_FILENO);
+          dup2(stderrCopy, STDERR_FILENO);
           resetUser(fd);
           close(fd);
           FD_CLR(fd, &afds);
         }
+        else{
+          cout << prompt << flush; // for waiting next cmd
+          dup2(stdinCopy, STDIN_FILENO);
+          dup2(stdoutCopy, STDOUT_FILENO);
+          dup2(stderrCopy, STDERR_FILENO);
+        }
+        close(stdinCopy);
+        close(stdoutCopy);
+        close(stderrCopy);
       }
     }
-		
-    /*
-    int sockCopy1 = dup(ssock);
-    int sockCopy2 = dup(ssock);
-    dup2(ssock, STDIN_FILENO);
-    dup2(sockCopy1, STDOUT_FILENO);
-    dup2(sockCopy2, STDERR_FILENO);
-    npshell();
-		close(ssock);
-		close(sockCopy1);
-		close(sockCopy2);
-    */
 	}
   return 0;
 }
@@ -149,166 +179,185 @@ int passiveTCP(int service, int queLen){
   }
   /* Bind the socket */
 	if (bind(sock, (struct sockaddr *)&sin, sizeof(sin)) < 0){
-		cerr << "can't bind to " << service << "port: " << strerror(errno) << endl;
+		cerr << "can't bind to " << service << " port: " << strerror(errno) << endl;
     return -1;
   }
 	if (listen(sock, queLen) < 0){
-		cerr << "can't listen on " << service << "port: " << strerror(errno) << endl;
+		cerr << "can't listen on " << service << " port: " << strerror(errno) << endl;
     return -1;
   }
 	return sock;
 }
 
-int npshell() {
-
-  if(setenv("PATH", "bin:.", 1) == -1){
-    cerr << "Error: set env err" << endl;
+int npshellSingle(int ssock) {
+  User* usr = ssockToUser[ssock];
+  /* setenv according to user */
+  map<string, string>::iterator it;
+  for (it = usr->env.begin(); it != usr->env.end(); it++){
+    if(setenv(it->first.c_str(), it->second.c_str(), 1) == -1){
+      cerr << "Error: set env [" << it->first << "] err" << endl;
+    }
   }
+  
   signal (SIGCHLD, childHandler);
   string wordInCmd;
   string cmdInLine;
   vector<string> cmd;
-  char inBuf[2048];
-  ssize_t inSize;
 
-  while(true){
-    wordInCmd.clear();
-    cmd.clear();
-    lsFlag = false;
-    pureFlag = false;
-    sharePipeFlag = false;
-    pipeErrFlag = false;
-    cout << "% ";
-    // sprintf(outBuf, "% ");
-    // write(sock, outBuf, strlen(outBuf));
-    getline(cin, cmdInLine);
-    //cout << "cmd: " << cmdInLine << endl;
-    if (cmdInLine[cmdInLine.size()-1] == '\r'){
-      cmdInLine = cmdInLine.substr(0, cmdInLine.size()-1);
-    }
-    // lineHistory.push_back(cmdInLine);
-    iLine++; // for num pipe later
-    outLinePfd.push_back(-1);
-    successor.push_back(-1);
-    
-    // parse one line
-    istringstream inCmd(cmdInLine);
-    while (getline(inCmd, wordInCmd, ' ')) {
-      cmd.push_back(wordInCmd);
-    }
+  /* old while */
+  wordInCmd.clear();
+  cmd.clear();
+  usr->lsFlag = false;
+  usr->pureFlag = false;
+  usr->sharePipeFlag = false;
+  usr->pipeErrFlag = false;
 
-    if (cmd.size() == 0){
-      iLine--;
-      outLinePfd.pop_back();
-      successor.pop_back();
-      continue;
-    }else if (cmd[0] == "exit"){
-      //exit(0);
-      return 0;
-    }else if (cmd[0] == "printenv"){
-      if (cmd.size() == 2){
-        if (getenv(cmd[1].c_str()) != NULL){
-          cout << getenv(cmd[1].c_str()) << endl;
-          //sprintf(outBuf, "%s\n", getenv(cmd[1].c_str()));
-          //write(sock, outBuf, strlen(outBuf));
-        }else{
-          // cerr << "Error: no such env" << endl;
-        }
-      }else{
-        cerr << "Error: missing argument" << endl;
-      }
-    }else if (cmd[0] == "setenv"){
-      if (cmd.size() == 3){
-        setenv(cmd[1].c_str(), cmd[2].c_str(), 1); // overwrite exist env
-      }else{
-        cerr << "Error: missing argument" << endl;
-      }
-    }else{ // non-buildin function
-      
-      // process each cmd seperate by > or |
-      // Where is > or | ?
-      string pipeMark = cmd[cmd.size()-1].substr(0, 1);
-      if (pipeMark == "|" || pipeMark == "!"){ // |n or !n
-        // cout << "This is |n" << endl;
-        string afterMark = cmd[cmd.size()-1].substr(1);
-        successor[iLine] = iLine + strToInt(afterMark);
-        cmd.pop_back();
-        mit = mapSuccessor.find(successor[iLine]);
-        if (mit == mapSuccessor.end()){ // pass to new successor
-          mapSuccessor[successor[iLine]] = vector<int>(2, -1);
-        }else {
-          sharePipeFlag = true;
-        }
-        if (pipeMark == "!") {
-          pipeErrFlag = true;
-          // cout << "This is !n" << endl;
-        }
-        purePipe(cmd);
-        
-        if (!sharePipeFlag){
-          mapSuccessor[successor[iLine]][0] = outLinePfd[iLine];
-        }else {
-          close(outLinePfd[iLine]);
-          // cout << "parent close [" << outLinePfd[iLine] << "]" << endl;
-        }
-      }
-      else if (cmd.size() > 1 && cmd[cmd.size()-2] == ">"){
-        // cout << "This is >" << endl;
-        string fname = cmd.back();
-        // remove string after >
-        cmd.pop_back();
-        cmd.pop_back();
-        // process as purepipe
-        purePipe(cmd);
-        char buf[256];
-        ssize_t outSize;
-        ofstream redirectFile(fname);
-        while(outSize = read(outLinePfd[iLine], buf, sizeof(buf)-1)){
-          // cout << "buf catch size: " << outSize << endl;
-          buf[outSize] = '\0';
-          string strBuf(buf);
-          redirectFile << strBuf;
-          //write(sock, buf, strlen(buf));
-          memset(buf, 0, sizeof(buf));
-        }
-
-        close(outLinePfd[iLine]);
-        redirectFile.close();
-        
-      }
-      else { // 0 ~ n pipe 
-        // cout << "This is pure pipe" << endl;
-        pureFlag = true;
-        purePipe(cmd);
-        if (lsFlag == true) continue;
-        char buf[256];
-        ssize_t outSize;
-        while(outSize = read(outLinePfd[iLine], buf, sizeof(buf)-1)){
-          // cout << "buf catch size: " << outSize << endl;
-          buf[outSize] = '\0';
-          string strBuf(buf);
-          cout << strBuf;
-          //write(sock, buf, strlen(buf));
-          memset(buf, 0, sizeof(buf));
-        }
-        close(outLinePfd[iLine]);
-      }
-      
-    }
+  getline(cin, cmdInLine);
+  if (cmdInLine[cmdInLine.size()-1] == '\r'){
+    cmdInLine = cmdInLine.substr(0, cmdInLine.size()-1);
+  }
+  usr->iLine++; // for num pipe later
+  usr->outLinePfd.push_back(-1);
+  usr->successor.push_back(-1);
+  
+  // parse one line
+  istringstream inCmd(cmdInLine);
+  while (getline(inCmd, wordInCmd, ' ')) {
+    cmd.push_back(wordInCmd);
   }
 
+  if (cmd.size() == 0){
+    usr->iLine--;
+    usr->outLinePfd.pop_back();
+    usr->successor.pop_back();
+    return 1; // context switch to other user
+  }else if (cmd[0] == "exit"){
+    return 0; // close ssock
+  }else if (cmd[0] == "printenv"){
+    if (cmd.size() == 2){
+      if (getenv(cmd[1].c_str()) != NULL){
+        cout << getenv(cmd[1].c_str()) << endl;
+        //sprintf(outBuf, "%s\n", getenv(cmd[1].c_str()));
+        //write(sock, outBuf, strlen(outBuf));
+      }else{
+        // cerr << "Error: no such env" << endl;
+      }
+    }else{
+      cerr << "Error: Usage: printenv [env name]." << endl;
+    }
+  }else if (cmd[0] == "setenv"){
+    if (cmd.size() == 3){
+      setenv(cmd[1].c_str(), cmd[2].c_str(), 1); // overwrite exist env
+      usr->env[cmd[1]] = cmd[2]; // update personal env
+    }else{
+      cerr << "Error: Usage: setenv [env name] [env value]." << endl;
+    }
+  }else if (cmd[0] == "who"){
+    if (cmd.size() == 1){
+      listUser(usr);
+    }else{
+      cerr << "Error: Usage: who." << endl;
+    }
+  }else if (cmd[0] == "name"){
+    if (cmd.size() == 2){
+      if (nameExist(usr, cmd[1])){
+        cout << "*** User ’" << cmd[1] << "’ already exists. ***" << endl;
+      }else{
+        usr->name = cmd[1];
+        /* broadcast */
+        broadcast(usr->getNameMsg());
+      }
+      
+    }else{
+      cerr << "Error: Usage: name [newname]." << endl;
+    }
+  }else{ // non-buildin function
+    
+    // process each cmd seperate by > or |
+    // Where is > or | ?
+    string pipeMark = cmd[cmd.size()-1].substr(0, 1);
+    if (pipeMark == "|" || pipeMark == "!"){ // |n or !n
+      // cout << "This is |n" << endl;
+      string afterMark = cmd[cmd.size()-1].substr(1);
+      usr->successor[usr->iLine] = usr->iLine + strToInt(afterMark);
+      cmd.pop_back();
+      map<int, vector<int>>::iterator mit;
+      mit = usr->mapSuccessor.find(usr->successor[usr->iLine]);
+      if (mit == usr->mapSuccessor.end()){ // pass to new successor
+        usr->mapSuccessor[usr->successor[usr->iLine]] = vector<int>(2, -1);
+      }else {
+        usr->sharePipeFlag = true;
+      }
+      if (pipeMark == "!") {
+        usr->pipeErrFlag = true;
+        // cout << "This is !n" << endl;
+      }
+      purePipe(cmd, usr);
+      
+      if (!usr->sharePipeFlag){
+        usr->mapSuccessor[usr->successor[usr->iLine]][0] = usr->outLinePfd[usr->iLine];
+      }else {
+        close(usr->outLinePfd[usr->iLine]);
+        // cout << "parent close [" << outLinePfd[iLine] << "]" << endl;
+      }
+    }
+    else if (cmd.size() > 1 && cmd[cmd.size()-2] == ">"){
+      // cout << "This is >" << endl;
+      string fname = cmd.back();
+      // remove string after >
+      cmd.pop_back();
+      cmd.pop_back();
+      // process as purepipe
+      purePipe(cmd, usr);
+      char buf[256];
+      ssize_t outSize;
+      ofstream redirectFile(fname);
+      while(outSize = read(usr->outLinePfd[usr->iLine], buf, sizeof(buf)-1)){
+        // cout << "buf catch size: " << outSize << endl;
+        buf[outSize] = '\0';
+        string strBuf(buf);
+        redirectFile << strBuf;
+        //write(sock, buf, strlen(buf));
+        memset(buf, 0, sizeof(buf));
+      }
+
+      close(usr->outLinePfd[usr->iLine]);
+      redirectFile.close();
+      
+    }
+    else { // 0 ~ n pipe 
+      // cout << "This is pure pipe" << endl;
+      usr->pureFlag = true;
+      purePipe(cmd, usr);
+      if (usr->lsFlag == true) return 1;
+      char buf[256];
+      ssize_t outSize;
+      while(outSize = read(usr->outLinePfd[usr->iLine], buf, sizeof(buf)-1)){
+        // cout << "buf catch size: " << outSize << endl;
+        buf[outSize] = '\0';
+        string strBuf(buf);
+        cout << strBuf;
+        //write(sock, buf, strlen(buf));
+        memset(buf, 0, sizeof(buf));
+      }
+      close(usr->outLinePfd[usr->iLine]);
+    }
+    
+  }
+
+  return 1; // context switch to other user
 }
 
-void purePipe(vector<string> cmd){ // fork and connect sereval worker, but not guarantee finish 
+void purePipe(vector<string> cmd, User* usr){ // fork and connect sereval worker, but not guarantee finish 
   vector<vector<string>> cmdVec = splitPipe(cmd);
-  childPids.clear();
+  // childPids.clear();
   pid_t pid;
   int pfd[2];
   int prevPipeOutput = -1;
   
   /* pure ls */
-  if (pureFlag && cmdVec.size() == 1 && cmdVec[0][0] == "ls") { 
-    lsFlag = true;
+  if (usr->pureFlag && cmdVec.size() == 1 && cmdVec[0][0] == "ls") { 
+    usr->lsFlag = true;
     if ((pid = fork()) < 0) {
       cerr << "Error: fork failed" << endl;
       exit(0);
@@ -345,26 +394,26 @@ void purePipe(vector<string> cmd){ // fork and connect sereval worker, but not g
       
       if (icmd == 0){ // first cmd
         map<int, vector<int>>::iterator mit;
-        mit = mapSuccessor.find(iLine);
-        if (mit != mapSuccessor.end()){ // has predecessor
-          prevPipeOutput = mapSuccessor[iLine][0];
+        mit = usr->mapSuccessor.find(usr->iLine);
+        if (mit != usr->mapSuccessor.end()){ // has predecessor
+          prevPipeOutput = usr->mapSuccessor[usr->iLine][0];
           dup2(prevPipeOutput, STDIN_FILENO); // stdin from previous cmd
           close(prevPipeOutput);
-          close(mapSuccessor[iLine][1]);
+          close(usr->mapSuccessor[usr->iLine][1]);
         }
-        if(successor[iLine] != -1 && icmd == cmdVec.size()-1){
+        if(usr->successor[usr->iLine] != -1 && icmd == cmdVec.size()-1){
           // numpipe && last cmd
-          if (sharePipeFlag){
-            dup2(mapSuccessor[successor[iLine]][1], STDOUT_FILENO); // output to shared pipe
-            if (pipeErrFlag){
-              int tgCopy = dup(mapSuccessor[successor[iLine]][1]);
+          if (usr->sharePipeFlag){
+            dup2(usr->mapSuccessor[usr->successor[usr->iLine]][1], STDOUT_FILENO); // output to shared pipe
+            if (usr->pipeErrFlag){
+              int tgCopy = dup(usr->mapSuccessor[usr->successor[usr->iLine]][1]);
               dup2(tgCopy, STDERR_FILENO); // output to shared pipe
               close(tgCopy);
             }
-            close(mapSuccessor[successor[iLine]][1]);
+            close(usr->mapSuccessor[usr->successor[usr->iLine]][1]);
           }else {
             dup2(pfd[1], STDOUT_FILENO); // output to pipe
-            if (pipeErrFlag){
+            if (usr->pipeErrFlag){
               int tgCopy = dup(pfd[1]);
               dup2(tgCopy, STDERR_FILENO); // output to pipe
               close(tgCopy);
@@ -377,19 +426,19 @@ void purePipe(vector<string> cmd){ // fork and connect sereval worker, but not g
       }else { // mid cmd
         dup2(prevPipeOutput, STDIN_FILENO); // stdin from previous cmd
         close(prevPipeOutput);
-        if (successor[iLine] != -1 && icmd == cmdVec.size()-1){
+        if (usr->successor[usr->iLine] != -1 && icmd == cmdVec.size()-1){
           // |n or !n & last cmd
-          if (sharePipeFlag){
-            dup2(mapSuccessor[successor[iLine]][1], STDOUT_FILENO); // output to shared pipe
-            if (pipeErrFlag){
-              int tgCopy = dup(mapSuccessor[successor[iLine]][1]);
+          if (usr->sharePipeFlag){
+            dup2(usr->mapSuccessor[usr->successor[usr->iLine]][1], STDOUT_FILENO); // output to shared pipe
+            if (usr->pipeErrFlag){
+              int tgCopy = dup(usr->mapSuccessor[usr->successor[usr->iLine]][1]);
               dup2(tgCopy, STDERR_FILENO); // output to shared pipe
               close(tgCopy);
             }
-            close(mapSuccessor[successor[iLine]][1]);
+            close(usr->mapSuccessor[usr->successor[usr->iLine]][1]);
           }else {
             dup2(pfd[1], STDOUT_FILENO); // output to pipe
-            if (pipeErrFlag){
+            if (usr->pipeErrFlag){
               int tgCopy = dup(pfd[1]);
               dup2(tgCopy, STDERR_FILENO); // output to pipe
               close(tgCopy);
@@ -418,27 +467,54 @@ void purePipe(vector<string> cmd){ // fork and connect sereval worker, but not g
     } /* parent process */
     else {
       // cout << "create pfd: " << pfd[0] << " " << pfd[1] << endl; 
-      if (successor[iLine] != -1 && !sharePipeFlag && icmd == cmdVec.size()-1){
+      if (usr->successor[usr->iLine] != -1 && !usr->sharePipeFlag && icmd == cmdVec.size()-1){
         // numpipe && pass to new successor && last cmd
-        mapSuccessor[successor[iLine]][1] = pfd[1];
+        usr->mapSuccessor[usr->successor[usr->iLine]][1] = pfd[1];
       }else {
         close(pfd[1]);
         // cout << "parent close [" << pfd[1] << "]" << endl;
       }
-      childPids.push_back(pid);
+      // childPids.push_back(pid);
       if (icmd != 0){
         close(prevPipeOutput);
       }
       prevPipeOutput = pfd[0];
     }
   }
-  outLinePfd[iLine] = pfd[0];
-  mit = mapSuccessor.find(iLine);
-  if (mit != mapSuccessor.end()){
-    close(mapSuccessor[iLine][0]);
-    close(mapSuccessor[iLine][1]);
+  usr->outLinePfd[usr->iLine] = pfd[0];
+  map<int, vector<int>>::iterator mit;
+  mit = usr->mapSuccessor.find(usr->iLine);
+  if (mit != usr->mapSuccessor.end()){
+    close(usr->mapSuccessor[usr->iLine][0]);
+    close(usr->mapSuccessor[usr->iLine][1]);
     // cout << "parent close [" << mapSuccessor[iLine][0] << "]" << endl;
     // cout << "parent close [" << mapSuccessor[iLine][1] << "]" << endl;
+  }
+}
+
+void sendMsgTo(User* usr, string msg){
+  int stdinCopy = dup(STDIN_FILENO);
+  int stdoutCopy = dup(STDOUT_FILENO);
+  int stderrCopy = dup(STDERR_FILENO);
+
+  dup2(usr->ssock, STDIN_FILENO);
+  dup2(usr->ssock, STDOUT_FILENO);
+  dup2(usr->ssock, STDERR_FILENO);
+
+  cout << msg << flush; // for waiting next cmd
+
+  dup2(stdinCopy, STDIN_FILENO);
+  dup2(stdoutCopy, STDOUT_FILENO);
+  dup2(stderrCopy, STDERR_FILENO);
+  close(stdinCopy);
+  close(stdoutCopy);
+  close(stderrCopy);
+}
+
+void broadcast(string msg){
+  for (int u = 0; u < MAX_USER; u++){
+    if (users[u]->id == -1) continue;
+    sendMsgTo(users[u], msg);
   }
 }
 
@@ -457,6 +533,27 @@ User* getValidUser(){
     }
   }
   return NULL; // users full
+}
+
+void listUser(User* curUsr){
+  string header = "<ID>\t<nickname>\t<IP:port>\t<indicate me>";
+  cout << header << endl;
+  for (int u = 0; u < MAX_USER; u++){
+    if (users[u]->id == -1) continue;
+    cout << users[u]->getInfo(curUsr->id) << endl;
+  }
+}
+
+bool nameExist(User* curUsr, string newName){
+  if (newName == "(no name)") return false;
+
+  for (int u = 0; u < MAX_USER; u++){
+    if (users[u]->id == curUsr->id) continue;
+    if (users[u]->name == newName){
+      return true;
+    }
+  }
+  return false;
 }
 
 char** vecStrToChar(vector<string> cmd){
