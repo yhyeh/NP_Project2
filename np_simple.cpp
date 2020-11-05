@@ -15,7 +15,9 @@
 #include <fcntl.h>
 #include <map>
 #include <netdb.h>
+#include <sys/socket.h>
 #include <netinet/in.h>
+#include <arpa/inet.h>
 
 using namespace std;
 
@@ -47,17 +49,15 @@ char outBuf[1024];
 
 
 /* macros */
-#define PURE_PIPE 0
-#define FILE_REDI 1
-#define NUMB_PIPE 2
 #define QUE_LEN 1
 
 int main(int argc, char* const argv[]) {
   struct sockaddr_in fsin;	/* the from address of a client	*/
 	char *service;	/* service name or port number	*/
 	int	msock, ssock;		/* master & slave sockets	*/
-	socklen_t	alen;			/* from-address length		*/
-
+	socklen_t	alen = sizeof(fsin);			/* from-address length		*/
+  pid_t pid;
+  signal (SIGCHLD, childHandler);
 	/*
   switch (argc) {
     case	2:
@@ -72,22 +72,44 @@ int main(int argc, char* const argv[]) {
 
   msock = passiveTCP(atoi(service), QUE_LEN);
   while (1) {
+    cout << "Waiting client ... " << endl;
 		ssock = accept(msock, (struct sockaddr *)&fsin, &alen);
 		
 		if (ssock < 0){
 	  	cerr << "acceptfailed: " << strerror(errno) << endl;
       return -1;
     }
-    int sockCopy1 = dup(ssock);
-    int sockCopy2 = dup(ssock);
-    dup2(ssock, STDIN_FILENO);
-    dup2(sockCopy1, STDOUT_FILENO);
-    dup2(sockCopy2, STDERR_FILENO);
-    npshell();
-		close(ssock);
-		close(sockCopy1);
-		close(sockCopy2);
+
+    cout << "Accept a client from "<< inet_ntoa(fsin.sin_addr) << ":";
+    cout << fsin.sin_port << "\n" << endl;
+
+    while ((pid = fork()) < 0) {
+      waitpid(-1, NULL, 0);
+      // cerr << "Error: fork failed" << endl;
+      //exit(0);
+    }
+    if(pid == 0){ //child
+      close(msock);
+      int sockCopy1 = dup(ssock);
+      int sockCopy2 = dup(ssock);
+
+      dup2(ssock, STDIN_FILENO);
+      dup2(sockCopy1, STDOUT_FILENO);
+      dup2(sockCopy2, STDERR_FILENO);
+      
+      npshell();
+      
+      close(ssock);
+      close(sockCopy1);
+      close(sockCopy2);
+      exit(0);
+    }else{ // parent
+      close(ssock);
+      //waitpid(pid, NULL, 0);
+    }
+    
 	}
+  
   return 0;
 }
 
@@ -97,6 +119,8 @@ int passiveTCP(int service, int queLen){
   int sock;
   int sockType = SOCK_STREAM;
   string protocol = "tcp";
+  int enable = 1;
+  int disable = 0;
 
   memset((char*)&sin, 0, sizeof(sin));
   sin.sin_family = AF_INET;
@@ -111,6 +135,10 @@ int passiveTCP(int service, int queLen){
 	sock = socket(PF_INET, sockType, ppe->p_proto);
 	if (sock < 0){
 		cerr << "can't create socket: " << strerror(errno) << endl;
+    return -1;
+  }
+  if (setsockopt(sock, SOL_SOCKET, SO_REUSEADDR, &enable, sizeof(int)) < 0) {
+    cerr << "setsockopt(SO_REUSEADDR) failed" << endl;
     return -1;
   }
   /* Bind the socket */
@@ -130,7 +158,7 @@ int npshell() {
   if(setenv("PATH", "bin:.", 1) == -1){
     cerr << "Error: set env err" << endl;
   }
-  signal (SIGCHLD, childHandler);
+  //signal (SIGCHLD, childHandler);
   string wordInCmd;
   string cmdInLine;
   vector<string> cmd;
@@ -169,7 +197,7 @@ int npshell() {
       successor.pop_back();
       continue;
     }else if (cmd[0] == "exit"){
-      exit(0);
+      //exit(0);
       return 0;
     }else if (cmd[0] == "printenv"){
       if (cmd.size() == 2){
@@ -365,7 +393,8 @@ void purePipe(vector<string> cmd){ // fork and connect sereval worker, but not g
           dup2(pfd[1], STDOUT_FILENO); // output to pipe
         }
       }
-      for (int fd = 3; fd <= pfd[0]; fd++){
+      int nfds = getdtablesize();
+      for (int fd = 3; fd <= nfds; fd++){
         if (fd != prevPipeOutput){
           close(fd);
         }
