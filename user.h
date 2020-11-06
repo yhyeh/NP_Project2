@@ -18,7 +18,9 @@ public:
     User();
     string getInfo(int);
     string getLoginMsg();
+    string getLogoutMsg();
     string getNameMsg();
+    bool isOnline();
 
     /* shell variable */
     vector<int> outLinePfd;
@@ -58,12 +60,19 @@ string User::getLoginMsg(){
     sprintf(msg, "*** User ’%s’ entered from %s:%d. ***\n", name.c_str(), inet_ntoa(skInfo.sin_addr), skInfo.sin_port);
     return string(msg);
 }
+string User::getLogoutMsg(){
+    char msg[1024];
+    sprintf(msg, "*** User ’%s’ left. ***\n", name.c_str());
+    return string(msg);
+}
 string User::getNameMsg(){
     char msg[1024];
     sprintf(msg, "*** User from %s:%d is named ’%s’. ***\n", inet_ntoa(skInfo.sin_addr), skInfo.sin_port, name.c_str());
     return string(msg);
 }
-
+bool User::isOnline(){
+    return !(id == -1);
+}
 /*
 // get min unused id
 vector<bool> uidMap; // get min unused id

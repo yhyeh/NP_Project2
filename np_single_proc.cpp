@@ -67,10 +67,12 @@ int main(int argc, char* const argv[]) {
   fd_set rfds;
   fd_set afds;
   int nfds;
+  /* const string */
   string welcome = "****************************************\n";
   welcome.append("** Welcome to the information server. **\n");
   welcome.append("****************************************\n");
   string prompt = "% ";
+  
   /* init users */
   for (int i = 0; i < MAX_USER; i++){
     users.push_back(new User());
@@ -85,7 +87,7 @@ int main(int argc, char* const argv[]) {
       return -1;
 	}
   */
-  service = "7002";
+  service = "7001";
 
   msock = passiveTCP(atoi(service), QUE_LEN);
   nfds = __FD_SETSIZE; //getdtablesize();
@@ -206,6 +208,7 @@ int npshellSingle(int ssock) {
 
   /* old while */
   wordInCmd.clear();
+  cmdInLine.clear();
   cmd.clear();
   usr->lsFlag = false;
   usr->pureFlag = false;
@@ -232,6 +235,7 @@ int npshellSingle(int ssock) {
     usr->successor.pop_back();
     return 1; // context switch to other user
   }else if (cmd[0] == "exit"){
+    broadcast(usr->getLogoutMsg());
     return 0; // close ssock
   }else if (cmd[0] == "printenv"){
     if (cmd.size() == 2){
@@ -270,6 +274,44 @@ int npshellSingle(int ssock) {
       
     }else{
       cerr << "Error: Usage: name [newname]." << endl;
+    }
+  }else if (cmd[0] == "tell"){
+    if (cmd.size() >= 3){
+      string strID = cmd[1];
+      int uid = atoi(strID.c_str());
+      if (uid < 1 || uid > 30){
+        cout << "Error: illegal ID (ID=1~30)" << endl;
+        return -1;
+      }
+      User* recver = users[uid-1];
+      
+      if (recver->isOnline()){
+        /* compose msg */
+        string wholeMsg = "*** " + usr->name + " told you ***: "; 
+        size_t strIDpos = cmdInLine.find(strID);
+        string msg = cmdInLine.erase(0, strIDpos+strID.size());
+        msg.erase(0, msg.find_first_not_of(" "));
+        wholeMsg.append(msg+"\n");
+        sendMsgTo(recver, wholeMsg);
+      }else{
+        cout << "*** Error: user #"<< strID <<" does not exist yet. ***" << endl;
+      }
+      
+    }else{
+      cerr << "Error: Usage: tell [user] [message]." << endl;
+    }
+  }else if (cmd[0] == "yell"){
+    if (cmd.size() >= 2){
+      /* compose msg */
+      string wholeMsg = "*** " + usr->name + " yelled ***: "; 
+      size_t yellPos = cmdInLine.find("yell");
+      string msg = cmdInLine.erase(0, yellPos+4);
+      msg.erase(0, msg.find_first_not_of(" "));
+      wholeMsg.append(msg+"\n");
+
+      broadcast(wholeMsg);
+    }else{
+      cerr << "Error: Usage: yell [message]." << endl;
     }
   }else{ // non-buildin function
     
@@ -513,8 +555,9 @@ void sendMsgTo(User* usr, string msg){
 
 void broadcast(string msg){
   for (int u = 0; u < MAX_USER; u++){
-    if (users[u]->id == -1) continue;
-    sendMsgTo(users[u], msg);
+    if (users[u]->isOnline()){
+      sendMsgTo(users[u], msg);
+    }
   }
 }
 
