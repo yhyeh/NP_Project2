@@ -93,7 +93,7 @@ int main(int argc, char* const argv[]) {
     memcpy(&rfds, &afds, sizeof(rfds));
     if (select(nfds, &rfds, NULL, NULL, NULL) < 0){
       if (errno == EINTR) {
-        cout << "EINTR but ignore" << endl;
+        // cout << "EINTR but ignore" << endl;
         continue;
       }else {
         cerr << "select: " << strerror(errno) << endl;
