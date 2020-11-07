@@ -312,7 +312,7 @@ void purePipe(vector<string> cmd){ // fork and connect sereval worker, but not g
     }
     if (pid == 0){ // child
       if (execvp(cmdVec[0][0].c_str(), vecStrToChar(cmdVec[0])) == -1){
-        cerr << "Unknown command: [" << cmdVec[0][0] << "]." << strerror(errno) << endl;
+        cerr << "Unknown command: [" << cmdVec[0][0] << "]." << endl;
         //sprintf(outBuf, "Unknown command: [%s].", cmdVec[0][0].c_str());
         //write(sock, outBuf, strlen(outBuf));
         exit(0);
@@ -404,7 +404,7 @@ void purePipe(vector<string> cmd){ // fork and connect sereval worker, but not g
       close(pfd[1]);
 
       if(execvp(curCmd[0].c_str(), vecStrToChar(curCmd)) == -1){
-        cerr << "Unknown command: [" << curCmd[0] << "]." << strerror(errno) << endl;
+        cerr << "Unknown command: [" << curCmd[0] << "]." << endl;
         //sprintf(outBuf, "Unknown command: [%s].", cmdVec[0][0].c_str());
         //write(sock, outBuf, strlen(outBuf));
         close(pfd[1]); // necessary?
