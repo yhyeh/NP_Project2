@@ -58,7 +58,7 @@ int main(int argc, char* const argv[]) {
 	socklen_t	alen = sizeof(fsin);			/* from-address length		*/
   pid_t pid;
   signal (SIGCHLD, childHandler);
-	/*
+	
   switch (argc) {
     case	2:
       service = argv[1];
@@ -67,8 +67,8 @@ int main(int argc, char* const argv[]) {
       cerr << "usage: np_simple [port]" << endl;
       return -1;
 	}
-  */
-  service = "7001";
+  
+  //service = "7001";
 
   msock = passiveTCP(atoi(service), QUE_LEN);
   while (1) {
