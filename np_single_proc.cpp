@@ -23,7 +23,6 @@
 using namespace std;
 /* macros */
 #define QUE_LEN 50
-#define MAX_USER 30
 
 /* functions */
 char** vecStrToChar(vector<string>);
@@ -40,6 +39,8 @@ bool nameExist(User*, string);
 void listUser(User*);
 void sendMsgTo(User*, string);
 void broadcast(string);
+int pipeFromOther(vector<string> &cmd); // check if <n
+int pipeToOther(vector<string> &cmd); // check if >n
 
 /* global vars */
 /*
@@ -58,7 +59,6 @@ bool pipeErrFlag;
 vector<User*> users;
 map<int, User*> ssockToUser;
 
-
 int main(int argc, char* const argv[]) {
   struct sockaddr_in fsin;	/* the from address of a client	*/
 	char *service;	/* service name or port number	*/
@@ -72,6 +72,15 @@ int main(int argc, char* const argv[]) {
   welcome.append("** Welcome to the information server. **\n");
   welcome.append("****************************************\n");
   string prompt = "% ";
+  
+  /* handle child exit */  // signal (SIGCHLD, childHandler);
+  struct sigaction action;
+  action.sa_handler = childHandler;
+  sigemptyset(&action.sa_mask);
+  action.sa_flags = SA_RESTART;
+  if (sigaction(SIGCHLD, &action, NULL) < 0){
+    cerr << "sigaction: " << strerror(errno) << endl;
+  }
   
   /* init users */
   for (int i = 0; i < MAX_USER; i++){
@@ -87,7 +96,7 @@ int main(int argc, char* const argv[]) {
       return -1;
 	}
   */
-  service = "7001";
+  service = "7002";
 
   msock = passiveTCP(atoi(service), QUE_LEN);
   nfds = __FD_SETSIZE; //getdtablesize();
@@ -96,8 +105,13 @@ int main(int argc, char* const argv[]) {
   while (1) {
     memcpy(&rfds, &afds, sizeof(rfds));
     if (select(nfds, &rfds, NULL, NULL, NULL) < 0){
-      cerr << "select: " << strerror(errno) << endl;
-      return -1;
+      if (errno == EINTR) {
+        cout << "EINTR but ignore" << endl;
+        continue;
+      }else {
+        cerr << "select: " << strerror(errno) << endl;
+        return -1;
+      }
     }
     if (FD_ISSET(msock, &rfds)){
       alen = sizeof(fsin);
@@ -157,40 +171,6 @@ int main(int argc, char* const argv[]) {
   return 0;
 }
 
-int passiveTCP(int service, int queLen){
-  struct protoent *ppe;
-  struct sockaddr_in sin;
-  int sock;
-  int sockType = SOCK_STREAM;
-  string protocol = "tcp";
-
-  memset((char*)&sin, 0, sizeof(sin));
-  sin.sin_family = AF_INET;
-  sin.sin_addr.s_addr = INADDR_ANY;
-  sin.sin_port = htons(service);
-  /* Map protocol name to protocol number */
-	if ((ppe = getprotobyname(protocol.c_str())) == 0){
-		cerr << "can't get \"" << protocol << "\" protocol entry\n" << endl;
-    return -1;
-  }
-  /* Allocate a socket */
-	sock = socket(PF_INET, sockType, ppe->p_proto);
-	if (sock < 0){
-		cerr << "can't create socket: " << strerror(errno) << endl;
-    return -1;
-  }
-  /* Bind the socket */
-	if (bind(sock, (struct sockaddr *)&sin, sizeof(sin)) < 0){
-		cerr << "can't bind to " << service << " port: " << strerror(errno) << endl;
-    return -1;
-  }
-	if (listen(sock, queLen) < 0){
-		cerr << "can't listen on " << service << " port: " << strerror(errno) << endl;
-    return -1;
-  }
-	return sock;
-}
-
 int npshellSingle(int ssock) {
   User* usr = ssockToUser[ssock];
   /* setenv according to user */
@@ -201,10 +181,14 @@ int npshellSingle(int ssock) {
     }
   }
   
-  signal (SIGCHLD, childHandler);
   string wordInCmd;
   string cmdInLine;
   vector<string> cmd;
+  char msgBuf[1024];
+
+  /* user pipe */
+  int senderID = -1;
+  int recverID = -1;
 
   /* old while */
   wordInCmd.clear();
@@ -214,11 +198,18 @@ int npshellSingle(int ssock) {
   usr->pureFlag = false;
   usr->sharePipeFlag = false;
   usr->pipeErrFlag = false;
+  usr->recvFlag = false;
+  usr->sendFlag = false;
+  usr->recvFail = false;
+  usr->sendFail = false;
+  // usr->recverPtr = NULL;
 
   getline(cin, cmdInLine);
   if (cmdInLine[cmdInLine.size()-1] == '\r'){
     cmdInLine = cmdInLine.substr(0, cmdInLine.size()-1);
   }
+  cmdInLine = cmdInLine.substr(cmdInLine.find_first_not_of(" "), cmdInLine.find_last_not_of(" ")+1);
+  
   usr->iLine++; // for num pipe later
   usr->outLinePfd.push_back(-1);
   usr->successor.push_back(-1);
@@ -234,10 +225,12 @@ int npshellSingle(int ssock) {
     usr->outLinePfd.pop_back();
     usr->successor.pop_back();
     return 1; // context switch to other user
-  }else if (cmd[0] == "exit"){
+  }
+  else if (cmd[0] == "exit"){
     broadcast(usr->getLogoutMsg());
     return 0; // close ssock
-  }else if (cmd[0] == "printenv"){
+  }
+  else if (cmd[0] == "printenv"){
     if (cmd.size() == 2){
       if (getenv(cmd[1].c_str()) != NULL){
         cout << getenv(cmd[1].c_str()) << endl;
@@ -249,23 +242,26 @@ int npshellSingle(int ssock) {
     }else{
       cerr << "Error: Usage: printenv [env name]." << endl;
     }
-  }else if (cmd[0] == "setenv"){
+  }
+  else if (cmd[0] == "setenv"){
     if (cmd.size() == 3){
       setenv(cmd[1].c_str(), cmd[2].c_str(), 1); // overwrite exist env
       usr->env[cmd[1]] = cmd[2]; // update personal env
     }else{
       cerr << "Error: Usage: setenv [env name] [env value]." << endl;
     }
-  }else if (cmd[0] == "who"){
+  }
+  else if (cmd[0] == "who"){
     if (cmd.size() == 1){
       listUser(usr);
     }else{
       cerr << "Error: Usage: who." << endl;
     }
-  }else if (cmd[0] == "name"){
+  }
+  else if (cmd[0] == "name"){
     if (cmd.size() == 2){
       if (nameExist(usr, cmd[1])){
-        cout << "*** User ’" << cmd[1] << "’ already exists. ***" << endl;
+        cout << "*** User '" << cmd[1] << "' already exists. ***" << endl;
       }else{
         usr->name = cmd[1];
         /* broadcast */
@@ -275,7 +271,8 @@ int npshellSingle(int ssock) {
     }else{
       cerr << "Error: Usage: name [newname]." << endl;
     }
-  }else if (cmd[0] == "tell"){
+  }
+  else if (cmd[0] == "tell"){
     if (cmd.size() >= 3){
       string strID = cmd[1];
       int uid = atoi(strID.c_str());
@@ -300,7 +297,8 @@ int npshellSingle(int ssock) {
     }else{
       cerr << "Error: Usage: tell [user] [message]." << endl;
     }
-  }else if (cmd[0] == "yell"){
+  }
+  else if (cmd[0] == "yell"){
     if (cmd.size() >= 2){
       /* compose msg */
       string wholeMsg = "*** " + usr->name + " yelled ***: "; 
@@ -313,10 +311,35 @@ int npshellSingle(int ssock) {
     }else{
       cerr << "Error: Usage: yell [message]." << endl;
     }
-  }else{ // non-buildin function
+  }
+  else{ // non-buildin function
     
-    // process each cmd seperate by > or |
-    // Where is > or | ?
+    /* get pipe from other */
+    if ((senderID = pipeFromOther(cmd)) > 0){
+      usr->recvFlag = true;
+      if (1 <= senderID && senderID <= MAX_USER){
+        User* sender = users[senderID-1];
+        if (sender->isOnline()){
+          if (usr->hasPipeFrom(senderID)){
+            sprintf(msgBuf, "*** %s (#%d) just received from %s (#%d) by '%s' ***\n", usr->name.c_str(), usr->id, sender->name.c_str(), sender->id, cmdInLine.c_str());
+            broadcast(string(msgBuf));
+            usr->rpfd = usr->recvPipeFrom[sender->id-1];
+            usr->recvPipeFrom[sender->id-1] = -1; // reset
+          }else {
+            cout << "*** Error: the pipe #" << senderID << "->#" << usr->id << " does not exist yet. ***" << endl;
+            usr->recvFail = true;
+          }
+        }else {
+          cout << "*** Error: user #" << senderID << " does not exist yet. ***" << endl;
+          usr->recvFail = true;
+        }
+      }else {
+          cout << "*** Error: user #" << senderID << " does not exist yet. ***" << endl;
+          usr->recvFail = true;
+      }
+      
+    }
+    /* pipe output */
     string pipeMark = cmd[cmd.size()-1].substr(0, 1);
     if (pipeMark == "|" || pipeMark == "!"){ // |n or !n
       // cout << "This is |n" << endl;
@@ -342,6 +365,49 @@ int npshellSingle(int ssock) {
         close(usr->outLinePfd[usr->iLine]);
         // cout << "parent close [" << outLinePfd[iLine] << "]" << endl;
       }
+    }
+    else if ((recverID = pipeToOther(cmd)) > 0){ // >n : send to other user
+      usr->sendFlag = true;
+      if (1 <= recverID && recverID <= MAX_USER){
+        User* recver = users[recverID-1];
+        if (recver->isOnline()){
+          if (recver->hasPipeFrom(usr->id)){
+            cout << "*** Error: the pipe #" << usr->id << "->#" << recverID << " already exists. ***" << endl;
+            usr->sendFail = true;
+          }else {
+            sprintf(msgBuf, "*** %s (#%d) just piped '%s' to %s (#%d) ***\n", usr->name.c_str(), usr->id, cmdInLine.c_str(), recver->name.c_str(), recver->id);
+            broadcast(string(msgBuf));
+            purePipe(cmd, usr);
+            recver->recvPipeFrom[usr->id-1] = usr->outLinePfd[usr->iLine];
+          }
+        }else {
+          cout << "*** Error: user #" << recverID << " does not exist yet. ***" << endl;
+          usr->sendFail = true;
+        }
+      }else {
+        cout << "*** Error: user #" << recverID << " does not exist yet. ***" << endl;
+        usr->sendFail = true;
+      }
+
+      if(usr->sendFail){
+        purePipe(cmd, usr);
+        char buf[256];
+        ssize_t outSize;
+        ofstream redirectFile("/dev/null");
+        while(outSize = read(usr->outLinePfd[usr->iLine], buf, sizeof(buf)-1)){
+          // cout << "buf catch size: " << outSize << endl;
+          buf[outSize] = '\0';
+          string strBuf(buf);
+          redirectFile << strBuf;
+          //write(sock, buf, strlen(buf));
+          memset(buf, 0, sizeof(buf));
+        }
+
+        close(usr->outLinePfd[usr->iLine]);
+        redirectFile.close();
+      }
+      
+      
     }
     else if (cmd.size() > 1 && cmd[cmd.size()-2] == ">"){
       // cout << "This is >" << endl;
@@ -435,9 +501,22 @@ void purePipe(vector<string> cmd, User* usr){ // fork and connect sereval worker
     if (pid == 0){
       
       if (icmd == 0){ // first cmd
+        /* recv pipe from other */
+        if (usr->recvFlag){
+          if (usr->recvFail){
+            int devNull = open("/dev/null", O_RDWR);
+            dup2(devNull, STDIN_FILENO); // stdin from previous cmd
+            close(prevPipeOutput);
+          }else{
+            prevPipeOutput = usr->rpfd;
+            dup2(prevPipeOutput, STDIN_FILENO); // stdin from previous cmd
+            close(prevPipeOutput);
+          }
+        }
+        /* has number pipe predecessor */
         map<int, vector<int>>::iterator mit;
         mit = usr->mapSuccessor.find(usr->iLine);
-        if (mit != usr->mapSuccessor.end()){ // has predecessor
+        if (mit != usr->mapSuccessor.end()){
           prevPipeOutput = usr->mapSuccessor[usr->iLine][0];
           dup2(prevPipeOutput, STDIN_FILENO); // stdin from previous cmd
           close(prevPipeOutput);
@@ -490,7 +569,7 @@ void purePipe(vector<string> cmd, User* usr){ // fork and connect sereval worker
           dup2(pfd[1], STDOUT_FILENO); // output to pipe
         }
       }
-      int nfds = getdtablesize();
+      int nfds = __FD_SETSIZE; // getdtablesize();
       for (int fd = 3; fd <= nfds; fd++){
         if (fd != prevPipeOutput){
           close(fd);
@@ -526,12 +605,41 @@ void purePipe(vector<string> cmd, User* usr){ // fork and connect sereval worker
   usr->outLinePfd[usr->iLine] = pfd[0];
   map<int, vector<int>>::iterator mit;
   mit = usr->mapSuccessor.find(usr->iLine);
-  if (mit != usr->mapSuccessor.end()){
+  if (mit != usr->mapSuccessor.end()){ // is number pipe receiver
     close(usr->mapSuccessor[usr->iLine][0]);
     close(usr->mapSuccessor[usr->iLine][1]);
     // cout << "parent close [" << mapSuccessor[iLine][0] << "]" << endl;
     // cout << "parent close [" << mapSuccessor[iLine][1] << "]" << endl;
   }
+  if(usr->recvFlag){
+    close(usr->rpfd);
+  }
+}
+
+int pipeFromOther(vector<string> &cmd){ // check if <n
+/* return <n idx in cmd, -1 if not found */
+  for (int i = 1; i < cmd.size(); i++){
+    if (cmd[i].size() <= 1) continue; // single char <, |
+    int senderID = atoi(cmd[i].substr(1).c_str());
+    if (cmd[i].substr(0, 1) == "<" && senderID > 0){
+      cmd.erase(cmd.begin() + i);
+      return senderID;
+    }
+  }
+  return -1;
+}
+
+int pipeToOther(vector<string> &cmd){ // check if >n
+  /* return >n idx in cmd, -1 if not found */
+  for (int i = 1; i < cmd.size(); i++){
+    if (cmd[i].size() <= 1) continue; // single char >, |
+    int recverID = atoi(cmd[i].substr(1).c_str());
+    if (cmd[i].substr(0, 1) == ">" && recverID > 0){
+      cmd.erase(cmd.begin() + i);
+      return recverID;
+    }
+  }
+  return -1;
 }
 
 void sendMsgTo(User* usr, string msg){
@@ -599,6 +707,40 @@ bool nameExist(User* curUsr, string newName){
   return false;
 }
 
+int passiveTCP(int service, int queLen){
+  struct protoent *ppe;
+  struct sockaddr_in sin;
+  int sock;
+  int sockType = SOCK_STREAM;
+  string protocol = "tcp";
+
+  memset((char*)&sin, 0, sizeof(sin));
+  sin.sin_family = AF_INET;
+  sin.sin_addr.s_addr = INADDR_ANY;
+  sin.sin_port = htons(service);
+  /* Map protocol name to protocol number */
+	if ((ppe = getprotobyname(protocol.c_str())) == 0){
+		cerr << "can't get \"" << protocol << "\" protocol entry\n" << endl;
+    return -1;
+  }
+  /* Allocate a socket */
+	sock = socket(PF_INET, sockType, ppe->p_proto);
+	if (sock < 0){
+		cerr << "can't create socket: " << strerror(errno) << endl;
+    return -1;
+  }
+  /* Bind the socket */
+	if (bind(sock, (struct sockaddr *)&sin, sizeof(sin)) < 0){
+		cerr << "can't bind to " << service << " port: " << strerror(errno) << endl;
+    return -1;
+  }
+	if (listen(sock, queLen) < 0){
+		cerr << "can't listen on " << service << " port: " << strerror(errno) << endl;
+    return -1;
+  }
+	return sock;
+}
+
 char** vecStrToChar(vector<string> cmd){
   char** result = (char**)malloc(sizeof(char*)*(cmd.size()+1));
   for(int i = 0; i < cmd.size(); i++){
@@ -642,6 +784,7 @@ int strToInt(string str){
 }
 
 void childHandler(int sig){
+  // cout << "child finished" << endl;
   while(waitpid(-1, NULL, WNOHANG) > 0){
 
   }

@@ -5,7 +5,10 @@
 #include <arpa/inet.h>
 #include <vector>
 #include <map>
+
 using namespace std;
+
+#define MAX_USER 30
 
 class User{
 public:
@@ -31,6 +34,18 @@ public:
     bool pureFlag;
     bool sharePipeFlag;
     bool pipeErrFlag;
+
+    /* user pipe */
+    vector<int> recvPipeFrom; // map sender id to pipe fd
+    int rpfd;
+    bool recvFlag;
+    bool sendFlag;
+    bool recvFail;
+    bool sendFail;
+    // User* recverPtr;
+    bool hasPipeFrom(int);
+    //void setRecvInfo(User*);
+    //void setSendInfo(User*);
 };
 
 User::User(){
@@ -45,6 +60,17 @@ User::User(){
     pureFlag = false;
     sharePipeFlag = false;
     pipeErrFlag = false;
+
+    /* user pipe */
+    for (int i = 0; i < MAX_USER; i++){
+        recvPipeFrom.push_back(-1);
+    }
+    rpfd = -1;
+    recvFlag = false;
+    sendFlag = false;
+    recvFail = false;
+    sendFail = false;
+    // recverPtr = NULL;
 }
 string User::getInfo(int curUserId){ // for "who" cmd
     char info[1024];
@@ -57,31 +83,33 @@ string User::getInfo(int curUserId){ // for "who" cmd
 }
 string User::getLoginMsg(){
     char msg[1024];
-    sprintf(msg, "*** User ’%s’ entered from %s:%d. ***\n", name.c_str(), inet_ntoa(skInfo.sin_addr), skInfo.sin_port);
+    sprintf(msg, "*** User '%s' entered from %s:%d. ***\n", name.c_str(), inet_ntoa(skInfo.sin_addr), skInfo.sin_port);
     return string(msg);
 }
 string User::getLogoutMsg(){
     char msg[1024];
-    sprintf(msg, "*** User ’%s’ left. ***\n", name.c_str());
+    sprintf(msg, "*** User '%s' left. ***\n", name.c_str());
     return string(msg);
 }
 string User::getNameMsg(){
     char msg[1024];
-    sprintf(msg, "*** User from %s:%d is named ’%s’. ***\n", inet_ntoa(skInfo.sin_addr), skInfo.sin_port, name.c_str());
+    sprintf(msg, "*** User from %s:%d is named '%s'. ***\n", inet_ntoa(skInfo.sin_addr), skInfo.sin_port, name.c_str());
     return string(msg);
 }
 bool User::isOnline(){
     return !(id == -1);
 }
+bool User::hasPipeFrom(int senderID){
+    return !(recvPipeFrom[senderID-1] == -1);
+}
 /*
-// get min unused id
-vector<bool> uidMap; // get min unused id
-int getMinID(uidMap);
-
->> new user
-assign id
-set env
-
-clear env
-
+void User::setRecvInfo(User* sender){
+    recvFlag = true;
+    rpfd = recvPipeFrom[sender->id-1];
+    recvPipeFrom[sender->id-1] = -1; // reset
+}
+void User::setSendInfo(User* recver){
+    sendFlag = true;
+    // recverPtr = recver;
+}
 */
