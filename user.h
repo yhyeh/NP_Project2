@@ -74,7 +74,7 @@ User::User(){
 }
 string User::getInfo(int curUserId){ // for "who" cmd
     char info[1024];
-    sprintf(info, "%d\t%s\t%s:%d", id, name.c_str(), inet_ntoa(skInfo.sin_addr), skInfo.sin_port);
+    sprintf(info, "%d\t%s\t%s:%d", id, name.c_str(), inet_ntoa(skInfo.sin_addr), ntohs(skInfo.sin_port));
     string strInfo(info);
     if (curUserId == id){
         strInfo.append("\t<-me");
@@ -83,7 +83,7 @@ string User::getInfo(int curUserId){ // for "who" cmd
 }
 string User::getLoginMsg(){
     char msg[1024];
-    sprintf(msg, "*** User '%s' entered from %s:%d. ***\n", name.c_str(), inet_ntoa(skInfo.sin_addr), skInfo.sin_port);
+    sprintf(msg, "*** User '%s' entered from %s:%d. ***\n", name.c_str(), inet_ntoa(skInfo.sin_addr), ntohs(skInfo.sin_port));
     return string(msg);
 }
 string User::getLogoutMsg(){
@@ -93,7 +93,7 @@ string User::getLogoutMsg(){
 }
 string User::getNameMsg(){
     char msg[1024];
-    sprintf(msg, "*** User from %s:%d is named '%s'. ***\n", inet_ntoa(skInfo.sin_addr), skInfo.sin_port, name.c_str());
+    sprintf(msg, "*** User from %s:%d is named '%s'. ***\n", inet_ntoa(skInfo.sin_addr), ntohs(skInfo.sin_port), name.c_str());
     return string(msg);
 }
 bool User::isOnline(){

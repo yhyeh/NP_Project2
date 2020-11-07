@@ -81,7 +81,7 @@ int main(int argc, char* const argv[]) {
     }
 
     cout << "Accept a client from "<< inet_ntoa(fsin.sin_addr) << ":";
-    cout << fsin.sin_port << "\n" << endl;
+    cout << ntohs(fsin.sin_port) << "\n" << endl;
 
     while ((pid = fork()) < 0) {
       waitpid(-1, NULL, 0);
