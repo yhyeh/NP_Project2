@@ -42,10 +42,8 @@ public:
     bool sendFlag;
     bool recvFail;
     bool sendFail;
-    // User* recverPtr;
     bool hasPipeFrom(int);
-    //void setRecvInfo(User*);
-    //void setSendInfo(User*);
+
 };
 
 User::User(){
@@ -70,7 +68,6 @@ User::User(){
     sendFlag = false;
     recvFail = false;
     sendFail = false;
-    // recverPtr = NULL;
 }
 string User::getInfo(int curUserId){ // for "who" cmd
     char info[1024];
@@ -102,14 +99,4 @@ bool User::isOnline(){
 bool User::hasPipeFrom(int senderID){
     return !(recvPipeFrom[senderID-1] == -1);
 }
-/*
-void User::setRecvInfo(User* sender){
-    recvFlag = true;
-    rpfd = recvPipeFrom[sender->id-1];
-    recvPipeFrom[sender->id-1] = -1; // reset
-}
-void User::setSendInfo(User* recver){
-    sendFlag = true;
-    // recverPtr = recver;
-}
-*/
+

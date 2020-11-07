@@ -43,19 +43,6 @@ int pipeFromOther(vector<string> &cmd); // check if <n
 int pipeToOther(vector<string> &cmd); // check if >n
 
 /* global vars */
-/*
-vector<int> outLinePfd;
-vector<int> successor;
-int iLine = -1;
-// vector<pid_t> childPids;
-bool lsFlag;
-bool pureFlag;
-map<int, vector<int>> mapSuccessor;
-map<int, vector<int>>::iterator mit;
-bool sharePipeFlag;
-bool pipeErrFlag;
-// char outBuf[1024];
-*/
 vector<User*> users;
 map<int, User*> ssockToUser;
 
@@ -235,8 +222,6 @@ int npshellSingle(int ssock) {
     if (cmd.size() == 2){
       if (getenv(cmd[1].c_str()) != NULL){
         cout << getenv(cmd[1].c_str()) << endl;
-        //sprintf(outBuf, "%s\n", getenv(cmd[1].c_str()));
-        //write(sock, outBuf, strlen(outBuf));
       }else{
         // cerr << "Error: no such env" << endl;
       }
@@ -400,7 +385,6 @@ int npshellSingle(int ssock) {
           buf[outSize] = '\0';
           string strBuf(buf);
           redirectFile << strBuf;
-          //write(sock, buf, strlen(buf));
           memset(buf, 0, sizeof(buf));
         }
 
@@ -426,7 +410,6 @@ int npshellSingle(int ssock) {
         buf[outSize] = '\0';
         string strBuf(buf);
         redirectFile << strBuf;
-        //write(sock, buf, strlen(buf));
         memset(buf, 0, sizeof(buf));
       }
 
@@ -446,7 +429,6 @@ int npshellSingle(int ssock) {
         buf[outSize] = '\0';
         string strBuf(buf);
         cout << strBuf;
-        //write(sock, buf, strlen(buf));
         memset(buf, 0, sizeof(buf));
       }
       close(usr->outLinePfd[usr->iLine]);
@@ -475,8 +457,6 @@ void purePipe(vector<string> cmd, User* usr){ // fork and connect sereval worker
       if (execvp(cmdVec[0][0].c_str(), vecStrToChar(cmdVec[0])) == -1){
         cerr << "Unknown command: [" << cmdVec[0][0] << "]." << endl;
         //cerr << "Unknown command: [" << cmdVec[0][0] << "]." << strerror(errno) << endl;
-        //sprintf(outBuf, "Unknown command: [%s].", cmdVec[0][0].c_str());
-        //write(sock, outBuf, strlen(outBuf));
         exit(0);
       } 
     }else{ // parent
@@ -485,7 +465,6 @@ void purePipe(vector<string> cmd, User* usr){ // fork and connect sereval worker
     return;
   }
 
-  // vector<int> predecessor = getPredecessor(iLine);  
   // 0 ~ n pipe
   for (int icmd = 0; icmd < cmdVec.size(); icmd++){
     vector<string> curCmd = cmdVec[icmd];
@@ -581,8 +560,6 @@ void purePipe(vector<string> cmd, User* usr){ // fork and connect sereval worker
       if(execvp(curCmd[0].c_str(), vecStrToChar(curCmd)) == -1){
         cerr << "Unknown command: [" << curCmd[0] << "]." << endl;
         //cerr << "Unknown command: [" << curCmd[0] << "]." << strerror(errno) << endl;
-        //sprintf(outBuf, "Unknown command: [%s].", cmdVec[0][0].c_str());
-        //write(sock, outBuf, strlen(outBuf));
         close(pfd[1]); // necessary?
         exit(0);
       }
