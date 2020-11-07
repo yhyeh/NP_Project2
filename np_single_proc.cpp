@@ -86,7 +86,7 @@ int main(int argc, char* const argv[]) {
   for (int i = 0; i < MAX_USER; i++){
     users.push_back(new User());
   }
-	/*
+	
   switch (argc) {
     case	2:
       service = argv[1];
@@ -95,8 +95,8 @@ int main(int argc, char* const argv[]) {
       cerr << "usage: np_simple [port]" << endl;
       return -1;
 	}
-  */
-  service = "7002";
+  
+  //service = "7002";
 
   msock = passiveTCP(atoi(service), QUE_LEN);
   nfds = __FD_SETSIZE; //getdtablesize();
