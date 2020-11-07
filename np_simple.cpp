@@ -90,18 +90,20 @@ int main(int argc, char* const argv[]) {
     }
     if(pid == 0){ //child
       close(msock);
-      int sockCopy1 = dup(ssock);
-      int sockCopy2 = dup(ssock);
+      //int sockCopy1 = dup(ssock);
+      //int sockCopy2 = dup(ssock);
 
       dup2(ssock, STDIN_FILENO);
-      dup2(sockCopy1, STDOUT_FILENO);
-      dup2(sockCopy2, STDERR_FILENO);
+      //dup2(sockCopy1, STDOUT_FILENO);
+      //dup2(sockCopy2, STDERR_FILENO);
+      dup2(ssock, STDOUT_FILENO);
+      dup2(ssock, STDERR_FILENO);
       
       npshell();
       
       close(ssock);
-      close(sockCopy1);
-      close(sockCopy2);
+      //close(sockCopy1);
+      //close(sockCopy2);
       exit(0);
     }else{ // parent
       close(ssock);
