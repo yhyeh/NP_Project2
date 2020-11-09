@@ -83,7 +83,7 @@ int main(int argc, char* const argv[]) {
       return -1;
 	}
   
-  //service = "7002";
+  // service = "7003";
 
   msock = passiveTCP(atoi(service), QUE_LEN);
   nfds = __FD_SETSIZE; //getdtablesize();
@@ -217,7 +217,6 @@ int npshellSingle(int ssock) {
   if (cmdInLine[cmdInLine.size()-1] == '\r'){
     cmdInLine = cmdInLine.substr(0, cmdInLine.size()-1);
   }
-  cmdInLine = cmdInLine.substr(cmdInLine.find_first_not_of(" "), cmdInLine.find_last_not_of(" ")+1);
   
   usr->iLine++; // for num pipe later
   usr->outLinePfd.push_back(-1);
@@ -235,7 +234,9 @@ int npshellSingle(int ssock) {
     usr->successor.pop_back();
     return 1; // context switch to other user
   }
-  else if (cmd[0] == "exit"){
+
+  cmdInLine = cmdInLine.substr(cmdInLine.find_first_not_of(" "), cmdInLine.find_last_not_of(" ")+1);
+  if (cmd[0] == "exit"){
     broadcast(usr->getLogoutMsg());
     return 0; // close ssock
   }
