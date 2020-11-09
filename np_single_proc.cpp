@@ -225,7 +225,9 @@ int npshellSingle(int ssock) {
   // parse one line
   istringstream inCmd(cmdInLine);
   while (getline(inCmd, wordInCmd, ' ')) {
-    cmd.push_back(wordInCmd);
+    if (wordInCmd != ""){
+      cmd.push_back(wordInCmd);
+    }
   }
 
   if (cmd.size() == 0){
