@@ -94,7 +94,7 @@ string User::getNameMsg(){
     return string(msg);
 }
 bool User::isOnline(){
-    return !(id == -1);
+    return (id != -1) && (1 <= id) && (id <= 30);
 }
 bool User::hasPipeFrom(int senderID){
     return !(recvPipeFrom[senderID-1] == -1);

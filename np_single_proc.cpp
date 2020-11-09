@@ -114,6 +114,11 @@ int main(int argc, char* const argv[]) {
       ssockToUser[ssock] = newUser;
       memcpy(&(newUser->skInfo), &fsin, sizeof(fsin));
       cout << "newuser:: " << newUser->getInfo(newUser->id) << endl;
+      cout << "current users size:" << users.size() << endl;
+      for (int i = 0; i < users.size(); i++){
+        cout << i << "\t" << users[i]->id << users[i]->getInfo(0) << endl;
+      }
+      cout << "=============================" << endl;
       /* welcome info */
       sendMsgTo(newUser, welcome);
       /* broadcast */
