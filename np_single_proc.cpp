@@ -669,9 +669,9 @@ void broadcast(string msg){
 
 void resetUser(int ssock){
   User* exitUser = ssockToUser[ssock];
-  delete exitUser; //clear old info
-  exitUser = new User(); // reset 
+  users[exitUser->id-1] = new User(); // reset 
   ssockToUser.erase(ssock);
+  delete exitUser; //clear old info
 }
 
 User* getValidUser(){
