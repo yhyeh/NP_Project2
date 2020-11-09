@@ -51,23 +51,24 @@ User::User(){
     this->id = -1;
     this->name = "(no name)";
     this->env["PATH"] = "bin:.";
+    this->skInfo = {0};
 
     /* shell variable */
-    iLine = -1;
-    lsFlag = false;
-    pureFlag = false;
-    sharePipeFlag = false;
-    pipeErrFlag = false;
+    this->iLine = -1;
+    this->lsFlag = false;
+    this->pureFlag = false;
+    this->sharePipeFlag = false;
+    this->pipeErrFlag = false;
 
     /* user pipe */
     for (int i = 0; i < MAX_USER; i++){
-        recvPipeFrom.push_back(-1);
+        this->recvPipeFrom.push_back(-1);
     }
-    rpfd = -1;
-    recvFlag = false;
-    sendFlag = false;
-    recvFail = false;
-    sendFail = false;
+    this->rpfd = -1;
+    this->recvFlag = false;
+    this->sendFlag = false;
+    this->recvFail = false;
+    this->sendFail = false;
 }
 string User::getInfo(int curUserId){ // for "who" cmd
     char info[1024];

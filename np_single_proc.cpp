@@ -112,11 +112,16 @@ int main(int argc, char* const argv[]) {
       User* newUser = getValidUser();
       newUser->ssock = ssock;
       ssockToUser[ssock] = newUser;
-      memcpy(&(newUser->skInfo), &fsin, sizeof(fsin));
+      // memcpy(&(newUser->skInfo), &fsin, sizeof(fsin));
+      newUser->skInfo.sin_family = fsin.sin_family;
+      newUser->skInfo.sin_addr.s_addr = fsin.sin_addr.s_addr;
+      newUser->skInfo.sin_port = fsin.sin_port;
+      // memcpy(newUser->skInfo.sin_zero, fsin.sin_zero);
+
       cout << "newuser:: " << newUser->getInfo(newUser->id) << endl;
       cout << "current users size:" << users.size() << endl;
       for (int i = 0; i < users.size(); i++){
-        cout << i << "\t" << users[i]->id << users[i]->getInfo(0) << endl;
+        cout << i << "\t" << users[i]->ssock << "\t" << users[i]->getInfo(0) << endl;
       }
       cout << "=============================" << endl;
       /* welcome info */
