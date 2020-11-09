@@ -108,20 +108,19 @@ int main(int argc, char* const argv[]) {
         return -1;
       }
       FD_SET(ssock, &afds); // user accpet
+      /*
       cout << "Accepted, current users size:" << users.size() << endl;
       for (int i = 0; i < users.size(); i++){
         cout << i << "\t" << users[i]->ssock << "\t" << users[i]->getInfo(0) << endl;
       }
       cout << "=============================" << endl;
+      */
+
       /* add new user */
       User* newUser = getValidUser();
       newUser->ssock = ssock;
       ssockToUser[ssock] = newUser;
-      // memcpy(&(newUser->skInfo), &fsin, sizeof(fsin));
-      newUser->skInfo.sin_family = fsin.sin_family;
-      newUser->skInfo.sin_addr.s_addr = fsin.sin_addr.s_addr;
-      newUser->skInfo.sin_port = fsin.sin_port;
-      // memcpy(newUser->skInfo.sin_zero, fsin.sin_zero);
+      memcpy(&(newUser->skInfo), &fsin, sizeof(fsin));
 
       cout << "newuser:: " << newUser->getInfo(newUser->id) << endl;
       cout << "Init user, current users size:" << users.size() << endl;
@@ -155,11 +154,13 @@ int main(int argc, char* const argv[]) {
           dup2(stdoutCopy, STDOUT_FILENO);
           dup2(stderrCopy, STDERR_FILENO);
           resetUser(fd);
-          cout << "Init user, current users size:" << users.size() << endl;
+
+          cout << "User exit, current users size:" << users.size() << endl;
           for (int i = 0; i < users.size(); i++){
             cout << i << "\t" << users[i]->ssock << "\t" << users[i]->getInfo(0) << endl;
           }
           cout << "=============================" << endl;
+          
           close(fd);
           FD_CLR(fd, &afds);
         }
