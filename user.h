@@ -52,6 +52,7 @@ User::User(){
     this->name = "(no name)";
     this->env["PATH"] = "bin:.";
     this->skInfo = {0};
+    this->ssock = -1;
 
     /* shell variable */
     this->iLine = -1;

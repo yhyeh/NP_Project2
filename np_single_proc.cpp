@@ -108,7 +108,7 @@ int main(int argc, char* const argv[]) {
         return -1;
       }
       FD_SET(ssock, &afds); // user accpet
-      cout << "current users size:" << users.size() << endl;
+      cout << "Accepted, current users size:" << users.size() << endl;
       for (int i = 0; i < users.size(); i++){
         cout << i << "\t" << users[i]->ssock << "\t" << users[i]->getInfo(0) << endl;
       }
@@ -124,7 +124,7 @@ int main(int argc, char* const argv[]) {
       // memcpy(newUser->skInfo.sin_zero, fsin.sin_zero);
 
       cout << "newuser:: " << newUser->getInfo(newUser->id) << endl;
-      cout << "current users size:" << users.size() << endl;
+      cout << "Init user, current users size:" << users.size() << endl;
       for (int i = 0; i < users.size(); i++){
         cout << i << "\t" << users[i]->ssock << "\t" << users[i]->getInfo(0) << endl;
       }
@@ -155,6 +155,11 @@ int main(int argc, char* const argv[]) {
           dup2(stdoutCopy, STDOUT_FILENO);
           dup2(stderrCopy, STDERR_FILENO);
           resetUser(fd);
+          cout << "Init user, current users size:" << users.size() << endl;
+          for (int i = 0; i < users.size(); i++){
+            cout << i << "\t" << users[i]->ssock << "\t" << users[i]->getInfo(0) << endl;
+          }
+          cout << "=============================" << endl;
           close(fd);
           FD_CLR(fd, &afds);
         }
