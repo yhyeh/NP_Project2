@@ -14,3 +14,8 @@ single user -> multiple users
 - accept users with POSIX select() to do I/O multiplexing
 - manage independent profiles of users
 - support message delivering between users with pipes
+
+### Other projects in this course
+- [Project 1 - NPShell](https://github.com/yhyeh/NP_Project1)
+- [Project 3 - Remote Batch System](https://github.com/yhyeh/NP_Project3)
+- [Project 4 - SOCKS 4 Server](https://github.com/yhyeh/NP_Project4)
